@@ -1,281 +1,283 @@
 #!/usr/bin/env python3
-"""Render the 19 November 2026 world-news front page (1024x1024 PNG).
+"""Draw the one-day world news infographic for Thursday 19 November 2026.
 
-Drawn programmatically with PIL so every letter is crisp. Run:
-    python3 render.py            -> writes entry.png next to this file
+Everything here is drawn from scratch with Pillow: a masthead, one lead
+story with a night-skyline illustration, five smaller story cards, and a
+sources footer. Run it from this directory; it writes entry.png beside it.
 """
-import math
+
+from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-OUT = "entry.png"
+CANVAS_W = 1024
+CANVAS_H = 1024
 
-PAPER = (246, 241, 231)
-INK = (20, 20, 20)
-NAVY = (16, 38, 63)
-NAVY2 = (24, 56, 92)
-RED = (180, 35, 24)
-GOLD = (217, 164, 65)
-GREEN = (31, 122, 61)
-TEAL = (20, 120, 90)
+INK = (13, 22, 38)          # deep navy page background
+PAPER = (250, 247, 238)     # warm paper for the story cards
+PAPER_EDGE = (214, 206, 188)
+LEAD_BG = (24, 34, 64)      # lead panel, slightly lighter navy
+AMBER = (245, 176, 65)
+CORAL = (232, 93, 74)
+TEAL = (45, 160, 150)
+SKY = (84, 141, 212)
+PLUM = (146, 94, 178)
+LEAF = (74, 148, 74)
 WHITE = (255, 255, 255)
-BORDER = (206, 198, 180)
-GREY = (90, 88, 82)
-LIGHT = (238, 232, 219)
+SOFT = (226, 231, 240)      # pale text on dark panels
+MUTED = (96, 104, 122)      # grey text on paper
+DARK_TEXT = (28, 32, 46)
 
-SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def load_typefaces():
+    """Return the (bold, regular) DejaVu faces at a few fixed sizes."""
+    bold_path = FONT_DIR / "DejaVuSans-Bold.ttf"
+    plain_path = FONT_DIR / "DejaVuSans.ttf"
+    faces = {}
+    for size in (19, 22, 24, 26, 29, 32, 40, 52):
+        faces[("bold", size)] = ImageFont.truetype(str(bold_path), size)
+        faces[("plain", size)] = ImageFont.truetype(str(plain_path), size)
+    return faces
 
 
-def wrap(draw, text, fnt, max_w):
-    """Greedy word wrap returning a list of lines that fit max_w."""
-    words = text.split()
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=fnt) <= max_w:
-            cur = trial
+def wrap_words(pencil, sentence, face, max_width):
+    """Split a sentence into lines that fit inside max_width pixels."""
+    lines = []
+    current = ""
+    for word in sentence.split():
+        trial = f"{current} {word}".strip()
+        if pencil.textlength(trial, font=face) <= max_width:
+            current = trial
         else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
-def draw_text_block(draw, x, y, max_w, lines, fnt, fill, leading=None):
-    if leading is None:
-        leading = int(fnt.size * 1.18)
-    for ln in lines:
-        draw.text((x, y), ln, font=fnt, fill=fill)
-        y += leading
+def put_lines(pencil, lines, left, top, face, colour, gap):
+    """Draw stacked lines and return the y just below the last one."""
+    y = top
+    for line in lines:
+        pencil.text((left, y), line, font=face, fill=colour)
+        y += face.size + gap
     return y
 
 
-def kicker(draw, x, y, text, color=RED):
-    f = font(SANS_B, 19)
-    draw.text((x, y), text, font=f, fill=color)
-    return y + 26
+def night_skyline(pencil, left, top, right, bottom):
+    """A night city skyline with a moon and lit windows, for the lead art."""
+    pencil.rectangle([left, top, right, bottom], fill=(16, 24, 54))
+    # stars
+    for sx, sy, sr in (
+        (left + 24, top + 18, 2), (left + 90, top + 44, 2),
+        (left + 150, top + 12, 3), (left + 210, top + 52, 2),
+        (left + 260, top + 26, 2), (left + 300, top + 60, 2),
+        (left + 60, top + 70, 2), (left + 180, top + 78, 2),
+    ):
+        pencil.ellipse([sx - sr, sy - sr, sx + sr, sy + sr], fill=WHITE)
+    # moon
+    pencil.ellipse([right - 92, top + 16, right - 28, top + 80], fill=(250, 232, 170))
+    pencil.ellipse([right - 84, top + 28, right - 62, top + 50], fill=(228, 205, 140))
+    # building silhouettes, back row then front row
+    base = bottom
+    back = [(0, 150, 46, 96), (52, 128, 44, 118), (102, 168, 50, 78),
+            (158, 138, 46, 108), (210, 172, 48, 74), (264, 142, 46, 104)]
+    for dx, dh, dw, _ in back:
+        pencil.rectangle([left + dx, base - dh, left + dx + dw, base],
+                         fill=(38, 50, 88))
+    front = [(18, 108, 58), (84, 84, 52), (142, 122, 56), (204, 92, 54),
+             (264, 116, 52)]
+    for dx, dh, dw in front:
+        pencil.rectangle([left + dx, base - dh, left + dx + dw, base],
+                         fill=(22, 30, 58))
+        # lit windows on the front row
+        for wy in range(base - dh + 12, base - 10, 20):
+            for wx in (left + dx + 10, left + dx + dw - 16):
+                pencil.rectangle([wx, wy, wx + 6, wy + 8], fill=AMBER)
+    pencil.rectangle([left, base - 4, right, base], fill=(10, 15, 30))
 
 
-def panel(draw, x, y, w, h, accent=RED):
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=10,
-                           fill=WHITE, outline=BORDER, width=2)
-    draw.rectangle([x, y + 8, x + 7, y + h - 8], fill=accent)
+def three_heads(pencil, cx, cy, r, colour):
+    """Three round heads above a shared table line: a summit in miniature."""
+    for dx in (-r * 2, 0, r * 2):
+        pencil.ellipse([cx + dx - r, cy - r, cx + dx + r, cy + r], fill=colour)
+    pencil.rectangle([cx - 2 * r - 8, cy + r + 6, cx + 2 * r + 8, cy + r + 12],
+                     fill=colour)
 
 
-def icon_controller(draw, cx, cy):
-    # game controller with a "VI" badge (GTA VI launch)
-    draw.rounded_rectangle([cx - 88, cy - 42, cx + 88, cy + 42], radius=22,
-                           fill=NAVY2)
-    draw.ellipse([cx - 78, cy - 30, cx - 38, cy + 10], fill=(12, 28, 48))
-    draw.ellipse([cx + 38, cy - 30, cx + 78, cy + 10], fill=(12, 28, 48))
-    # d-pad
-    draw.rectangle([cx - 62, cy - 22, cx - 54, cy + 2], fill=WHITE)
-    draw.rectangle([cx - 70, cy - 14, cx - 46, cy - 6], fill=WHITE)
-    # buttons
-    for bx, by, c in ((cx + 48, cy - 20, GOLD), (cx + 62, cy - 6, RED),
-                      (cx + 34, cy - 6, GREEN)):
-        draw.ellipse([bx - 7, by - 7, bx + 7, by + 7], fill=c,
-                     outline=WHITE, width=2)
-    # VI badge
-    draw.ellipse([cx - 26, cy + 6, cx + 26, cy + 40], fill=GOLD,
-                 outline=WHITE, width=3)
-    f = font(SANS_B, 22)
-    t = "VI"
-    draw.text((cx - draw.textlength(t, font=f) / 2, cy + 10), t,
-              font=f, fill=NAVY)
+def capitol_dome(pencil, cx, cy, _r, colour):
+    """A small capitol dome: drum, cupola and a flag on top."""
+    pencil.rectangle([cx - 26, cy + 6, cx + 26, cy + 26], fill=colour)
+    pencil.pieslice([cx - 22, cy - 18, cx + 22, cy + 14], 180, 360, fill=colour)
+    pencil.rectangle([cx - 3, cy - 26, cx + 3, cy - 16], fill=colour)
+    pencil.rectangle([cx + 3, cy - 26, cx + 16, cy - 18], fill=CORAL)
+    for dx in (-20, -7, 6, 19):
+        pencil.rectangle([cx + dx - 2, cy + 12, cx + dx + 2, cy + 26],
+                         fill=PAPER)
 
 
-def icon_trio(draw, cx, cy, r):
-    # three leaders: US, China, Russia as coloured dots in a ring
-    cols = [(35, 68, 140), (180, 35, 24), (232, 120, 30)]
-    for i, c in enumerate(cols):
-        a = math.radians(90 + i * 120)
-        x = cx + r * 0.62 * math.cos(a)
-        y = cy + r * 0.62 * math.sin(a)
-        draw.ellipse([x - 14, y - 14, x + 14, y + 14], fill=c,
-                     outline=WHITE, width=2)
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=NAVY2, width=3)
-    f = font(SANS_B, 22)
-    draw.text((cx - 6, cy - 11), "3", font=f, fill=NAVY2)
-
-
-def icon_gavel(draw, cx, cy):
-    # Speaker's gavel (compact: fits a ~60px strip)
-    draw.rounded_rectangle([cx - 40, cy - 22, cx + 40, cy - 4], radius=7,
-                           fill=(90, 60, 30))
-    draw.rectangle([cx - 6, cy - 4, cx + 6, cy + 30], fill=(120, 82, 40))
-    draw.ellipse([cx - 12, cy + 26, cx + 12, cy + 36], fill=(90, 60, 30))
-    draw.rectangle([cx - 48, cy + 40, cx + 48, cy + 46], fill=NAVY2)
-
-
-def icon_cyclone(draw, cx, cy, r):
-    # spiral storm
-    for i, rr in enumerate(range(r, 8, -9)):
+def cyclone_swirl(pencil, cx, cy, _r, colour):
+    """Concentric broken arcs suggesting a cyclone seen from above."""
+    for i, radius in enumerate((26, 20, 14, 8)):
         start = 20 + i * 55
-        draw.arc([cx - rr, cy - rr, cx + rr, cy + rr], start, start + 230,
-                 fill=NAVY2 if i % 2 == 0 else RED, width=5)
-    draw.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], fill=RED)
+        pencil.arc([cx - radius, cy - radius, cx + radius, cy + radius],
+                   start, start + 250, fill=colour, width=4)
+    pencil.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=colour)
 
 
-def icon_dish(draw, cx, cy):
-    # deep-space dish beaming a signal (Voyager 1) — compact, no tall arcs
-    draw.polygon([(cx - 32, cy - 14), (cx + 32, cy - 14), (cx, cy + 10)],
-                 fill=NAVY2)
-    draw.line([cx, cy + 10, cx, cy + 24], fill=NAVY2, width=4)
-    draw.line([cx - 18, cy + 24, cx + 18, cy + 24], fill=NAVY2, width=4)
-    for sx, sy in ((-56, -6), (56, -10), (70, 8)):
-        draw.ellipse([cx + sx - 3, cy + sy - 3, cx + sx + 3, cy + sy + 3],
-                     fill=GOLD)
+def space_probe(pencil, cx, cy, _r, colour):
+    """A deep-space probe: dish, body and a long antenna."""
+    pencil.line([cx - 24, cy + 18, cx + 4, cy - 6], fill=colour, width=4)
+    pencil.polygon([(cx - 26, cy + 2), (cx + 2, cy - 14), (cx + 10, cy + 8)],
+                   fill=colour)
+    pencil.rectangle([cx + 2, cy - 2, cx + 22, cy + 10], fill=colour)
+    pencil.line([cx + 22, cy + 4, cx + 30, cy - 14], fill=colour, width=3)
+    pencil.ellipse([cx + 27, cy - 17, cx + 33, cy - 11], fill=AMBER)
+    for sx, sy in ((cx - 30, cy - 18), (cx + 28, cy + 20), (cx - 8, cy - 24)):
+        pencil.ellipse([sx - 2, sy - 2, sx + 2, sy + 2], fill=WHITE)
 
 
-def icon_flags(draw, cx, cy):
-    # two flags side by side: India and Japan
-    # India: saffron / white / green with wheel dot
-    x0, y0 = cx - 78, cy - 34
-    draw.rectangle([x0, y0, x0 + 66, y0 + 14], fill=(255, 153, 51))
-    draw.rectangle([x0, y0 + 14, x0 + 66, y0 + 28], fill=WHITE)
-    draw.rectangle([x0, y0 + 28, x0 + 66, y0 + 42], fill=(19, 136, 8))
-    draw.ellipse([x0 + 26, y0 + 15, x0 + 40, y0 + 27], outline=NAVY2, width=2)
-    # Japan: white with red disc
-    x1 = cx + 12
-    draw.rectangle([x1, y0, x1 + 66, y0 + 42], fill=WHITE,
-                   outline=BORDER, width=2)
-    draw.ellipse([x1 + 21, y0 + 9, x1 + 45, y0 + 33], fill=RED)
+def torii_gate(pencil, cx, cy, _r, colour):
+    """A vermilion gate with two pillars and a double beam."""
+    pencil.rectangle([cx - 24, cy - 14, cx - 16, cy + 24], fill=colour)
+    pencil.rectangle([cx + 16, cy - 14, cx + 24, cy + 24], fill=colour)
+    pencil.rectangle([cx - 30, cy - 20, cx + 30, cy - 12], fill=colour)
+    pencil.rectangle([cx - 24, cy - 8, cx + 24, cy - 2], fill=colour)
+    pencil.ellipse([cx - 5, cy + 6, cx + 5, cy + 16], fill=AMBER)
+
+
+ICONS = {
+    "summit": three_heads,
+    "dome": capitol_dome,
+    "storm": cyclone_swirl,
+    "probe": space_probe,
+    "gate": torii_gate,
+}
+
+
+def story_card(pencil, faces, box, tag, tag_colour, icon, title, body):
+    """Paint one story card: tag + icon row, bold title, short body."""
+    x0, y0, x1, y1 = box
+    pencil.rounded_rectangle([x0, y0, x1, y1], radius=14, fill=PAPER,
+                             outline=PAPER_EDGE, width=2)
+    pencil.rounded_rectangle([x0, y0, x1, y0 + 8], radius=4, fill=tag_colour)
+    # tag chip
+    chip = faces[("bold", 19)]
+    chip_w = pencil.textlength(tag, font=chip) + 22
+    pencil.rounded_rectangle([x0 + 16, y0 + 22, x0 + 16 + chip_w, y0 + 50],
+                             radius=13, fill=tag_colour)
+    pencil.text((x0 + 27, y0 + 26), tag, font=chip, fill=WHITE)
+    # pictogram in a tinted disc at the top right
+    disc_cx, disc_cy, disc_r = x1 - 48, y0 + 52, 34
+    pencil.ellipse([disc_cx - disc_r, disc_cy - disc_r,
+                    disc_cx + disc_r, disc_cy + disc_r],
+                   fill=tag_colour)
+    ICONS[icon](pencil, disc_cx, disc_cy, 10, WHITE)
+    # title and body
+    title_face = faces[("bold", 29)]
+    body_face = faces[("plain", 22)]
+    inner_w = (x1 - x0) - 32
+    title_lines = wrap_words(pencil, title, title_face, inner_w)
+    y = put_lines(pencil, title_lines, x0 + 16, y0 + 66, title_face,
+                  DARK_TEXT, 4)
+    body_lines = wrap_words(pencil, body, body_face, inner_w)
+    put_lines(pencil, body_lines, x0 + 16, y + 8, body_face, MUTED, 5)
+
+
+def build_sheet():
+    """Compose the whole 1024x1024 sheet and return the image."""
+    faces = load_typefaces()
+    sheet = Image.new("RGB", (CANVAS_W, CANVAS_H), INK)
+    pencil = ImageDraw.Draw(sheet)
+
+    # ---- masthead ------------------------------------------------------
+    mast = "THE WORLD IN ONE DAY"
+    mast_face = faces[("bold", 52)]
+    mast_w = pencil.textlength(mast, font=mast_face)
+    pencil.text(((CANVAS_W - mast_w) / 2, 14), mast, font=mast_face, fill=WHITE)
+    date_line = "THURSDAY  •  19 NOVEMBER 2026"
+    date_face = faces[("bold", 26)]
+    date_w = pencil.textlength(date_line, font=date_face)
+    pencil.text(((CANVAS_W - date_w) / 2, 78), date_line, font=date_face,
+                fill=AMBER)
+    pencil.line([28, 116, CANVAS_W - 28, 116], fill=(52, 66, 96), width=2)
+
+    # ---- lead story: GTA VI -------------------------------------------
+    pencil.rounded_rectangle([16, 128, 1008, 384], radius=16, fill=LEAD_BG,
+                             outline=(52, 66, 96), width=2)
+    pencil.rounded_rectangle([32, 146, 32 + 264, 174], radius=13, fill=CORAL)
+    pencil.text((43, 150), "LEAD STORY  •  GAMES", font=faces[("bold", 19)],
+                fill=WHITE)
+    headline = "GTA VI launches worldwide"
+    head_face = faces[("bold", 40)]
+    pencil.text((32, 186), headline, font=head_face, fill=WHITE)
+    lead_body = ("Unlocks at midnight in each market, starting in New "
+                 "Zealand — 13 years after GTA V. Early reviews: 99 on "
+                 "Metacritic.")
+    lead_lines = wrap_words(pencil, lead_body, faces[("plain", 24)], 596)
+    put_lines(pencil, lead_lines, 32, 244, faces[("plain", 24)], SOFT, 7)
+    pencil.text((32, 344), "Sources: Reuters, AP",
+                font=faces[("plain", 19)], fill=(170, 180, 200))
+    night_skyline(pencil, 660, 146, 992, 368)
+
+    # ---- middle row: three stories ------------------------------------
+    middle = [
+        ("DIPLOMACY", SKY, "summit",
+         "Trump, Xi, Putin in Shenzhen",
+         "First three-way talks at APEC. Nuclear arms and Ukraine on "
+         "agenda. (Yonhap, Reuters)"),
+        ("U.S. POLITICS", PLUM, "dome",
+         "Jeffries picked for Speaker",
+         "House Democrats pick him 251–11. Full House vote 3 January; "
+         "would be the first Black Speaker. (AP, NPR)"),
+        ("WEATHER", TEAL, "storm",
+         "Cyclone Akvan nears India",
+         "Severe storm, red alert; schools shut in Odisha. Landfall "
+         "expected Friday. (IMD, The Hindu)"),
+    ]
+    card_w = 325
+    for i, (tag, colour, icon, title, body) in enumerate(middle):
+        x0 = 16 + i * (card_w + 8)
+        story_card(pencil, faces, (x0, 396, x0 + card_w, 688),
+                   tag, colour, icon, title, body)
+
+    # ---- bottom row: two stories --------------------------------------
+    bottom = [
+        ("SPACE", (52, 92, 160), "probe",
+         "Voyager 1 reaches one light-day",
+         "NASA marks the milestone today — the farthest human-made object "
+         "from Earth. (NASA, Reuters)"),
+        ("ASIA", LEAF, "gate",
+         "India–Japan 2+2 talks in Tokyo",
+         "Foreign and defence ministers discuss defence ties and a free "
+         "Indo-Pacific. (PIB, The Hindu)"),
+    ]
+    wide_w = 492
+    for i, (tag, colour, icon, title, body) in enumerate(bottom):
+        x0 = 16 + i * (wide_w + 8)
+        story_card(pencil, faces, (x0, 700, x0 + wide_w, 948),
+                   tag, colour, icon, title, body)
+
+    # ---- footer: sources ----------------------------------------------
+    footer = ("Sources: Reuters · AP · Yonhap · NPR · IMD · The Hindu · "
+              "NASA · PIB  —  Thursday 19 November 2026")
+    foot_face = faces[("plain", 19)]
+    foot_w = pencil.textlength(footer, font=foot_face)
+    pencil.text(((CANVAS_W - foot_w) / 2, 968), footer, font=foot_face,
+                fill=(170, 180, 200))
+    return sheet
 
 
 def main():
-    img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
-
-    # ---------- masthead ----------
-    d.rectangle([0, 0, W, 128], fill=NAVY)
-    d.rectangle([0, 128, W, 134], fill=GOLD)
-    f_title = font(SERIF, 52)
-    title = "THE WORLD IN ONE DAY"
-    d.text(((W - d.textlength(title, font=f_title)) / 2, 12), title,
-           font=f_title, fill=WHITE)
-    f_date = font(SANS_B, 34)
-    date = "THURSDAY, 19 NOVEMBER 2026"
-    d.text(((W - d.textlength(date, font=f_date)) / 2, 72), date,
-           font=f_date, fill=GOLD)
-
-    # ---------- lead story: GTA VI ----------
-    lx, ly, lw, lh = 28, 152, 968, 330
-    panel(d, lx, ly, lw, lh, accent=RED)
-    tx = lx + 28
-    y = ly + 18
-    y = kicker(d, tx, y, "LEAD  ·  CULTURE — GAMING")
-    f_h = font(SERIF, 42)
-    lines = wrap(d, "GTA VI unlocks worldwide after 13 years",
-                 f_h, 600)
-    y = draw_text_block(d, tx, y + 4, 600, lines, f_h, INK, leading=50)
-    f_s = font(SANS, 22)
-    sub = ("Rockstar's Vice City return rolls out at midnight in each "
-           "market; early reviews score 99 on Metacritic.")
-    lines = wrap(d, sub, f_s, 600)
-    y = draw_text_block(d, tx, y + 8, 600, lines, f_s, GREY, leading=28)
-    f_tag = font(SANS_B, 20)
-    d.text((tx, ly + lh - 44), "16m copies already sold, Sensor Tower says.",
-           font=f_tag, fill=NAVY2)
-    # illustration on the right
-    ix = lx + lw - 300
-    d.rectangle([ix, ly + 18, lx + lw - 22, ly + lh - 18], fill=LIGHT)
-    icon_controller(d, ix + 130, ly + 160)
-
-    # ---------- row 2: two panels ----------
-    ry, rh = 502, 216
-    pw = (968 - 20) // 2
-    # Shenzhen trilateral
-    x = 28
-    panel(d, x, ry, pw, rh, accent=NAVY2)
-    tx = x + 26
-    y = ry + 14
-    y = kicker(d, tx, y, "DIPLOMACY  ·  SHENZHEN", color=NAVY2)
-    f_h2 = font(SERIF, 29)
-    lines = wrap(d, "Trump, Xi, Putin meet in Shenzhen", f_h2, pw - 150)
-    y = draw_text_block(d, tx, y + 2, pw - 150, lines, f_h2, INK, leading=35)
-    lines = wrap(d, "First-ever trilateral at APEC; arms and Ukraine "
-                    "on the agenda.",
-                 font(SANS, 21), pw - 150)
-    draw_text_block(d, tx, y + 6, pw - 150, lines, font(SANS, 21), GREY,
-                    leading=26)
-    icon_trio(d, x + pw - 72, ry + rh - 66, 46)
-    # Jeffries
-    x = 28 + pw + 20
-    panel(d, x, ry, pw, rh, accent=RED)
-    tx = x + 26
-    y = ry + 14
-    y = kicker(d, tx, y, "US  ·  POLITICS")
-    lines = wrap(d, "Jeffries nominated for Speaker", f_h2, pw - 150)
-    y = draw_text_block(d, tx, y + 2, pw - 150, lines, f_h2, INK, leading=35)
-    lines = wrap(d, "Democrats pick him 251–11; he would be the first "
-                    "Black Speaker.",
-                 font(SANS, 21), pw - 150)
-    draw_text_block(d, tx, y + 6, pw - 150, lines, font(SANS, 21), GREY,
-                    leading=26)
-    icon_gavel(d, x + pw - 72, ry + rh - 64)
-
-    # ---------- row 3: three panels ----------
-    ry3, rh3 = 738, 216
-    pw3 = (968 - 40) // 3
-    # Cyclone Akvan
-    x = 28
-    panel(d, x, ry3, pw3, rh3, accent=NAVY2)
-    tx = x + 24
-    y = ry3 + 14
-    y = kicker(d, tx, y, "WEATHER  ·  INDIA", color=NAVY2)
-    f_h3 = font(SERIF, 26)
-    lines = wrap(d, "Cyclone Akvan nears India", f_h3, pw3 - 48)
-    y = draw_text_block(d, tx, y + 2, pw3 - 48, lines, f_h3, INK, leading=31)
-    lines = wrap(d, "Red alerts; schools shut. Landfall due Friday.",
-                 font(SANS, 20), pw3 - 48)
-    draw_text_block(d, tx, y + 6, pw3 - 48, lines, font(SANS, 20), GREY,
-                    leading=25)
-    icon_cyclone(d, x + pw3 // 2, ry3 + rh3 - 34, 20)
-    # Voyager 1
-    x = 28 + pw3 + 20
-    panel(d, x, ry3, pw3, rh3, accent=GOLD)
-    tx = x + 24
-    y = ry3 + 14
-    y = kicker(d, tx, y, "SPACE  ·  NASA", color=(160, 110, 20))
-    lines = wrap(d, "Voyager 1, one light-day away", f_h3, pw3 - 48)
-    y = draw_text_block(d, tx, y + 2, pw3 - 48, lines, f_h3, INK, leading=31)
-    lines = wrap(d, "NASA marks the milestone today; a signal takes a day.",
-                 font(SANS, 20), pw3 - 48)
-    draw_text_block(d, tx, y + 6, pw3 - 48, lines, font(SANS, 20), GREY,
-                    leading=25)
-    icon_dish(d, x + pw3 // 2, ry3 + rh3 - 28)
-    # India–Japan 2+2
-    x = 28 + 2 * (pw3 + 20)
-    panel(d, x, ry3, pw3, rh3, accent=TEAL)
-    tx = x + 24
-    y = ry3 + 14
-    y = kicker(d, tx, y, "ASIA  ·  DEFENCE", color=TEAL)
-    lines = wrap(d, "India–Japan 2+2 talks in Tokyo", f_h3, pw3 - 48)
-    y = draw_text_block(d, tx, y + 2, pw3 - 48, lines, f_h3, INK, leading=31)
-    lines = wrap(d, "Ministers review defence.",
-                 font(SANS, 20), pw3 - 48)
-    draw_text_block(d, tx, y + 6, pw3 - 48, lines, font(SANS, 20), GREY,
-                    leading=25)
-    icon_flags(d, x + pw3 // 2, ry3 + rh3 - 34)
-
-    # ---------- footer ----------
-    f_f = font(SANS, 18)
-    foot = ("Sources: Reuters · AP · Yonhap · IMD · NASA · PIB — "
-            "All events of Thursday 19 November 2026")
-    d.text(((W - d.textlength(foot, font=f_f)) / 2, 972), foot,
-           font=f_f, fill=GREY)
-
-    img.save(OUT, "PNG", optimize=True)
-    print(f"wrote {OUT} {img.size}")
+    """Render the sheet and save it as entry.png beside this file."""
+    sheet = build_sheet()
+    target = Path(__file__).resolve().parent / "entry.png"
+    sheet.save(target, format="PNG", optimize=True)
+    print(f"wrote {target} ({target.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
